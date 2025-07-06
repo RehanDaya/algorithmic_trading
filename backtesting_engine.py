@@ -1,33 +1,6 @@
 #!/usr/bin/env python3
 """
-Algorithmic Trading System - Multi-Strategy Framework
-=====================================================
-
-This script implements a multi-strategy algorithmic trading system for backtesting
-using backtrader framework. It includes comprehensive performance metrics and
-is designed for easy extension to live trading with Alpaca Markets.
-
-Available Strategies:
-1. RSI Mean Reversion:
-   - Buy when 14-period RSI < 30 (oversold)
-   - Sell when 14-period RSI > 70 (overbought)
-
-2. Moving Average Crossover:
-   - Buy when 10-period MA crosses above 50-period MA (golden cross)
-   - Sell when 10-period MA crosses below 50-period MA (death cross)
-
-Common Features:
-- Uses 15-minute bars for intraday trading (with daily fallback)
-- Fixed position size of 1 share
-- Comprehensive performance metrics including Alpha, Beta, Sharpe, etc.
-- Piotroski F-Score fundamental analysis
-
-Requirements:
-- Create a .env file with Alpaca API credentials
-- Install required packages: pip install backtrader yfinance pandas python-dotenv matplotlib
-
-Author: Trading Bot System
-Date: 2024
+Backtesting Engine - Core trading system using backtrader framework
 """
 
 import os
@@ -86,16 +59,55 @@ class TradingSystem:
         if not self.strategy_class:
             raise ValueError(f"Strategy '{strategy}' not found. Available strategies: {list(list_available_strategies().keys())}")
         
+
+        
         # Data storage
         self.data = None
         self.benchmark_data = None
         self.cerebro = None
         self.strategy_instance = None
+        self.current_interval = '15m'  # Store current interval for timeframe mapping
         
         # Results storage
         self.results = {}
         self.trades = []
+    
+    def _get_timeframe_compression(self, interval: str) -> Tuple[int, int]:
+        """
+        Convert interval string to backtrader timeframe and compression
         
+        Args:
+            interval: Data interval (e.g., '1d', '1h', '15m')
+            
+        Returns:
+            Tuple of (timeframe, compression)
+        """
+        interval_map = {
+            # Minutes
+            '1m': (bt.TimeFrame.Minutes, 1),
+            '2m': (bt.TimeFrame.Minutes, 2),
+            '5m': (bt.TimeFrame.Minutes, 5),
+            '15m': (bt.TimeFrame.Minutes, 15),
+            '30m': (bt.TimeFrame.Minutes, 30),
+            '60m': (bt.TimeFrame.Minutes, 60),
+            '90m': (bt.TimeFrame.Minutes, 90),
+            '1h': (bt.TimeFrame.Minutes, 60),
+            
+            # Days
+            '1d': (bt.TimeFrame.Days, 1),
+            '5d': (bt.TimeFrame.Days, 5),
+            
+            # Weeks
+            '1wk': (bt.TimeFrame.Weeks, 1),
+            '1w': (bt.TimeFrame.Weeks, 1),
+            
+            # Months
+            '1mo': (bt.TimeFrame.Months, 1),
+            '3mo': (bt.TimeFrame.Months, 3),
+        }
+        
+        return interval_map.get(interval.lower(), (bt.TimeFrame.Days, 1))
+
     def fetch_data(self, period: str = '6mo', interval: str = '15m') -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Fetch historical data using yfinance
@@ -108,6 +120,9 @@ class TradingSystem:
             Tuple of (primary_data, benchmark_data)
         """
         try:
+            # Store interval for timeframe mapping
+            self.current_interval = interval
+            
             print(f"Fetching {period} of {interval} data for {self.symbol} and {self.benchmark}...")
             
             # Adjust period for intraday data limitations
@@ -130,6 +145,7 @@ class TradingSystem:
                 print(f"⚠️  Intraday data unavailable, falling back to daily data for {period}")
                 self.data = ticker.history(period='6mo', interval='1d')
                 self.benchmark_data = benchmark_ticker.history(period='6mo', interval='1d')
+                self.current_interval = '1d'  # Update stored interval
                 
             if self.data.empty or self.benchmark_data.empty:
                 raise ValueError("No data retrieved from yfinance")
@@ -146,6 +162,23 @@ class TradingSystem:
     def calculate_piotroski_fscore(self) -> Dict:
         """
         Calculate Piotroski F-Score for fundamental analysis
+        
+        METRIC DEFINITION:
+        Piotroski F-Score: A 9-point financial strength score based on:
+        1. Positive net income
+        2. Positive return on assets (ROA)
+        3. Positive operating cash flow
+        4. Operating cash flow > net income
+        5. Decreasing long-term debt
+        6. Improving current ratio
+        7. No dilution (shares outstanding not increasing)
+        8. Improving gross margin
+        9. Improving asset turnover
+        
+        Score interpretation:
+        - 8-9: Strong financial position
+        - 5-7: Moderate financial position
+        - 0-4: Weak financial position
         
         Returns:
             Dictionary with F-Score components and total score
@@ -301,11 +334,14 @@ class TradingSystem:
             # Add strategy
             self.cerebro.addstrategy(self.strategy_class, printlog=False)
             
+            # Get correct timeframe and compression based on current interval
+            timeframe, compression = self._get_timeframe_compression(self.current_interval)
+            
             # Convert pandas DataFrame to backtrader format
             data_feed = bt.feeds.PandasData(
                 dataname=self.data,
-                timeframe=bt.TimeFrame.Minutes,
-                compression=15
+                timeframe=timeframe,
+                compression=compression
             )
             
             # Add data feed
@@ -335,7 +371,11 @@ class TradingSystem:
             final_value = self.cerebro.broker.getvalue()
             
             # Extract strategy instance
-            self.strategy_instance = results[0]
+            if results and len(results) > 0:
+                self.strategy_instance = results[0]
+            else:
+                print("❌ No results returned from backtest")
+                self.strategy_instance = None
             
             # Store results
             self.results = {
@@ -360,6 +400,27 @@ class TradingSystem:
     def calculate_comprehensive_metrics(self) -> Dict:
         """
         Calculate comprehensive performance metrics
+        
+        METRIC DEFINITIONS:
+        
+        Risk-Adjusted Returns:
+        - Sharpe Ratio: Risk-adjusted return using standard deviation
+        - Sortino Ratio: Risk-adjusted return using downside deviation
+        - Calmar Ratio: Annualized return divided by maximum drawdown
+        
+        Benchmark Analysis:
+        - Alpha: Excess return over the benchmark (SPY)
+        - Beta: Strategy's sensitivity to benchmark returns
+        - Information Ratio: Excess return over benchmark divided by tracking error
+        
+        Trade Analysis:
+        - Win/Loss Ratio: Ratio of winning to losing trades
+        - Profit Factor: Gross profit divided by gross loss
+        - Trade Frequency: Number of trades per year
+        - Average Trade Duration: Average time positions are held
+        
+        Fundamental Analysis:
+        - Piotroski F-Score: 9-point financial strength score using fundamental data
         
         Returns:
             Dictionary with all calculated metrics
@@ -426,13 +487,31 @@ class TradingSystem:
             metrics['trade_frequency'] = trade_frequency
             
             # 9. Average Trade Duration
-            if hasattr(self.strategy_instance, 'trade_durations') and self.strategy_instance.trade_durations:
-                avg_duration = np.mean(self.strategy_instance.trade_durations)
-                # Convert from bars to hours (15-minute bars)
-                avg_duration_hours = avg_duration * 0.25
-                metrics['avg_trade_duration_hours'] = avg_duration_hours
-            else:
-                metrics['avg_trade_duration_hours'] = 0
+            metrics['avg_trade_duration_hours'] = 0  # Default value
+            try:
+                if self.strategy_instance is not None:
+                    if hasattr(self.strategy_instance, 'trade_durations'):
+                        trade_durations = getattr(self.strategy_instance, 'trade_durations', [])
+                        if trade_durations and len(trade_durations) > 0:
+                            avg_duration = np.mean(trade_durations)
+                            # Convert from bars to hours based on actual interval
+                            timeframe, compression = self._get_timeframe_compression(self.current_interval)
+                            
+                            if timeframe == bt.TimeFrame.Minutes:
+                                avg_duration_hours = avg_duration * (compression / 60.0)  # minutes to hours
+                            elif timeframe == bt.TimeFrame.Days:
+                                avg_duration_hours = avg_duration * (compression * 24)  # days to hours
+                            elif timeframe == bt.TimeFrame.Weeks:
+                                avg_duration_hours = avg_duration * (compression * 24 * 7)  # weeks to hours
+                            elif timeframe == bt.TimeFrame.Months:
+                                avg_duration_hours = avg_duration * (compression * 24 * 30)  # approx months to hours
+                            else:
+                                avg_duration_hours = avg_duration  # fallback
+                                
+                            metrics['avg_trade_duration_hours'] = avg_duration_hours
+            except Exception as e:
+                # Silently handle trade duration calculation errors
+                pass
                 
             # 10. Calculate returns for Beta, Alpha, and other metrics
             strategy_returns = self.calculate_strategy_returns()
@@ -541,8 +620,16 @@ class TradingSystem:
         
         # Get strategy description
         strategy_description = "Unknown Strategy"
-        if self.strategy_instance:
-            strategy_description = self.strategy_instance.get_strategy_description()
+        try:
+            if self.strategy_instance is not None:
+                if hasattr(self.strategy_instance, 'get_strategy_description'):
+                    strategy_description = self.strategy_instance.get_strategy_description()
+                else:
+                    # Fallback to strategy name if description method doesn't exist
+                    strategy_description = getattr(self.strategy_instance, '__class__', type(self.strategy_instance)).__name__
+        except Exception as e:
+            print(f"Error getting strategy description: {e}")
+            strategy_description = "Unknown Strategy"
         
         print(f"{'Strategy:':<25} {strategy_description}")
         print(f"{'Benchmark:':<25} {self.benchmark}")
@@ -589,8 +676,8 @@ class TradingSystem:
         print(f"\n🔧 SYSTEM PARAMETERS")
         
         # Show strategy-specific parameters
-        if self.strategy_instance:
-            if hasattr(self.strategy_instance, 'params'):
+        try:
+            if self.strategy_instance is not None and hasattr(self.strategy_instance, 'params'):
                 params = self.strategy_instance.params
                 if hasattr(params, 'rsi_period'):
                     print(f"{'RSI Period:':<25} {params.rsi_period}")
@@ -603,30 +690,33 @@ class TradingSystem:
                 print(f"{'Position Size:':<25} {params.position_size} share")
             else:
                 print(f"{'Position Size:':<25} 1 share")
+        except Exception as e:
+            print(f"{'Position Size:':<25} 1 share (error reading params: {e})")
         
         print(f"{'Commission:':<25} 0.1%")
         
         # Trade Log
-        if hasattr(self.strategy_instance, 'trades_log') and self.strategy_instance.trades_log:
-            print(f"\n📋 TRADE LOG (Last 10 trades)")
-            print("-" * 80)
-            recent_trades = self.strategy_instance.trades_log[-10:]
-            for trade in recent_trades:
-                print(f"Trade #{trade['trade_num']}: {trade['entry_date'].strftime('%Y-%m-%d %H:%M')} -> "
-                      f"{trade['exit_date'].strftime('%Y-%m-%d %H:%M')}: "
-                      f"${trade['entry_price']:.2f} -> ${trade['exit_price']:.2f} "
-                      f"(${trade['pnl']:.2f}, {trade['pnl_pct']:.1f}%)")
+        print(f"\n📋 TRADE LOG")
+        try:
+            if (self.strategy_instance is not None and 
+                hasattr(self.strategy_instance, 'trades_log')):
+                trades_log = getattr(self.strategy_instance, 'trades_log', [])
+                if trades_log:
+                    print(f"All {len(trades_log)} trades:")
+                    print("-" * 80)
+                    for trade in trades_log:
+                        print(f"Trade #{trade['trade_num']}: {trade['entry_date'].strftime('%Y-%m-%d %H:%M')} -> "
+                              f"{trade['exit_date'].strftime('%Y-%m-%d %H:%M')}: "
+                              f"${trade['entry_price']:.2f} -> ${trade['exit_price']:.2f} "
+                              f"(${trade['pnl']:.2f}, {trade['pnl_pct']:.1f}%)")
+                else:
+                    print("No trades executed")
+            else:
+                print("No trades executed (strategy instance unavailable)")
+        except Exception as e:
+            print(f"Error accessing trade log - {e}")
         
-        print("\n" + "="*80)
-        print("💡 FUTURE DEVELOPMENT NOTES")
-        print("="*80)
-        print("• To enable live trading, uncomment Alpaca integration sections")
-        print("• Adjust position sizing based on account size and risk tolerance")
-        print("• Consider adding stop-loss and take-profit levels")
-        print("• Implement portfolio management for multiple symbols")
-        print("• Add real-time data streaming for live execution")
-        print("• Include slippage and realistic transaction costs")
-        print("="*80)
+
     
     def plot_results(self):
         """Plot backtest results using backtrader's plotting"""
@@ -680,16 +770,6 @@ def main():
     strategies = list_available_strategies()
     for i, (name, description) in enumerate(strategies.items(), 1):
         print(f"  {i}. {name}: {description}")
-    
-    # Validate environment
-    print("\n📋 Checking environment setup...")
-    if not os.path.exists('.env'):
-        print("⚠️  Warning: .env file not found. Please create it with:")
-        print("   ALPACA_API_KEY=your_api_key")
-        print("   ALPACA_SECRET_KEY=your_secret_key")
-        print("   ALPACA_BASE_URL=https://paper-api.alpaca.markets/v2")
-        print("   RISK_FREE_RATE=0.02")
-        print("   Continuing with defaults...")
     
     try:
         # Test both strategies

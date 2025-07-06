@@ -10,8 +10,6 @@ Available Strategies:
 1. RSI Mean Reversion Strategy
 2. Moving Average Crossover Strategy
 
-Author: Trading Bot System
-Date: 2024
 """
 
 from typing import Dict, Type
