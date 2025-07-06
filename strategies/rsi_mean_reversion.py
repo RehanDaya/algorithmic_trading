@@ -75,16 +75,13 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if not self.position:
             # Enter long position when RSI is oversold
             if current_rsi < self.params.rsi_oversold:
-                position_size = self.calculate_position_size()
-                if position_size > 0:
-                    self.log(f'RSI OVERSOLD: {current_rsi:.2f} - BUYING {position_size} shares')
-                    self.order = self.buy(size=position_size)
-                else:
-                    self.log(f'RSI OVERSOLD: {current_rsi:.2f} - Insufficient cash')
+                self.log(f'RSI OVERSOLD: {current_rsi:.2f} - BUYING')
+                # Use backtrader's built-in order_target_percent
+                self.order = self.order_target_percent(target=0.99)
                 
         else:
             # Exit long position when RSI is overbought
             if current_rsi > self.params.rsi_overbought:
-                current_position = self.position.size
-                self.log(f'RSI OVERBOUGHT: {current_rsi:.2f} - SELLING {current_position} shares')
-                self.order = self.sell(size=current_position) 
+                self.log(f'RSI OVERBOUGHT: {current_rsi:.2f} - SELLING')
+                # Close position using backtrader's built-in method
+                self.order = self.order_target_percent(target=0.0) 

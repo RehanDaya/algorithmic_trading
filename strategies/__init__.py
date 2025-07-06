@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 """
-Trading Strategies Package
-==========================
+Strategies Package
+=================
 
-This package contains various trading strategies for algorithmic trading.
-Each strategy is implemented in its own module and inherits from BaseStrategy.
+This package contains all available trading strategies.
+Each strategy inherits from BaseStrategy and implements specific trading logic.
 
 Available Strategies:
-1. RSI Mean Reversion Strategy
-2. Moving Average Crossover Strategy
-
+- RSI Mean Reversion: Buy when RSI < 30, sell when RSI > 70
+- Moving Average Crossover: Buy on golden cross, sell on death cross  
+- Buy and Hold: Buy at start and hold until end (benchmark)
 """
 
 from typing import Dict, Type
 from .base_strategy import BaseStrategy
 from .rsi_mean_reversion import RSIMeanReversionStrategy
 from .ma_crossover import MovingAverageCrossoverStrategy
+from .buy_and_hold import BuyAndHoldStrategy
 
-# Strategy registry for easy access
-AVAILABLE_STRATEGIES: Dict[str, Type[BaseStrategy]] = {
+# Registry of available strategies
+AVAILABLE_STRATEGIES = {
     'rsi_mean_reversion': RSIMeanReversionStrategy,
     'ma_crossover': MovingAverageCrossoverStrategy,
+    'buy_and_hold': BuyAndHoldStrategy,
 }
 
 
@@ -64,6 +66,7 @@ __all__ = [
     'BaseStrategy',
     'RSIMeanReversionStrategy', 
     'MovingAverageCrossoverStrategy',
+    'BuyAndHoldStrategy',
     'get_strategy_class',
     'list_available_strategies',
     'AVAILABLE_STRATEGIES'

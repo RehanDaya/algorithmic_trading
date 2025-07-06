@@ -85,16 +85,13 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
         if not self.position:
             # Enter long position on golden cross
             if crossover > 0:
-                position_size = self.calculate_position_size()
-                if position_size > 0:
-                    self.log(f'GOLDEN CROSS: MA({self.params.short_period})={short_ma:.2f} > MA({self.params.long_period})={long_ma:.2f} - BUYING {position_size} shares')
-                    self.order = self.buy(size=position_size)
-                else:
-                    self.log(f'GOLDEN CROSS: MA({self.params.short_period})={short_ma:.2f} > MA({self.params.long_period})={long_ma:.2f} - Insufficient cash')
+                self.log(f'GOLDEN CROSS: MA({self.params.short_period})={short_ma:.2f} > MA({self.params.long_period})={long_ma:.2f} - BUYING')
+                # Use backtrader's built-in order_target_percent
+                self.order = self.order_target_percent(target=0.99)
                 
         else:
             # Exit long position on death cross
             if crossover < 0:
-                current_position = self.position.size
-                self.log(f'DEATH CROSS: MA({self.params.short_period})={short_ma:.2f} < MA({self.params.long_period})={long_ma:.2f} - SELLING {current_position} shares')
-                self.order = self.sell(size=current_position) 
+                self.log(f'DEATH CROSS: MA({self.params.short_period})={short_ma:.2f} < MA({self.params.long_period})={long_ma:.2f} - SELLING')
+                # Close position using backtrader's built-in method
+                self.order = self.order_target_percent(target=0.0) 

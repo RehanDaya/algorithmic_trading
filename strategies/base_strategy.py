@@ -62,18 +62,6 @@ class BaseStrategy(bt.Strategy):
         """Check if sell condition is met - must be implemented by subclasses"""
         raise NotImplementedError("Subclasses must implement should_sell()")
     
-    def calculate_position_size(self) -> int:
-        """Calculate the maximum number of shares that can be bought with available cash"""
-        available_cash = self.broker.getcash()
-        current_price = self.data.close[0]
-        
-        # Calculate max shares (accounting for commission)
-        # Leave a small buffer to account for commission
-        max_shares = int(available_cash * 0.99 / current_price)
-        
-        # Ensure we buy at least 1 share if we have enough cash
-        return max(1, max_shares) if available_cash >= current_price else 0
-    
     def log(self, txt, dt=None):
         """Logging function for strategy"""
         dt = dt or self.datas[0].datetime.date(0)
@@ -142,17 +130,13 @@ class BaseStrategy(bt.Strategy):
         if not self.position:
             # Check buy condition
             if self.should_buy():
-                position_size = self.calculate_position_size()
-                if position_size > 0:
-                    self.log(f'{self.get_strategy_name()}: BUY SIGNAL - Size: {position_size} shares')
-                    self.order = self.buy(size=position_size)
-                else:
-                    self.log(f'{self.get_strategy_name()}: BUY SIGNAL - Insufficient cash')
+                self.log(f'{self.get_strategy_name()}: BUY SIGNAL')
+                # Use 99% of available cash for the position (backtrader built-in method)
+                self.order = self.order_target_percent(target=0.99)
                 
         else:
             # Check sell condition
             if self.should_sell():
-                # Sell all shares we currently own
-                current_position = self.position.size
-                self.log(f'{self.get_strategy_name()}: SELL SIGNAL - Size: {current_position} shares')
-                self.order = self.sell(size=current_position) 
+                self.log(f'{self.get_strategy_name()}: SELL SIGNAL')
+                # Close the entire position (backtrader built-in method)
+                self.order = self.order_target_percent(target=0.0) 
