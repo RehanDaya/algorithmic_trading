@@ -54,8 +54,7 @@ def list_available_strategies() -> Dict[str, str]:
             temp_instance.params = strategy_class.params
             strategies[name] = temp_instance.get_strategy_description()
         except Exception:
-            # Fallback to class name if description fails
-            strategies[name] = strategy_class.__name__
+            strategies[name] = "Description unavailable"
     
     return strategies
 

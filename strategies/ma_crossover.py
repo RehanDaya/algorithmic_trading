@@ -27,7 +27,6 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
     params = (
         ('short_period', 10),
         ('long_period', 50),
-        ('position_size', 1),
         ('printlog', False),
     )
     
@@ -86,11 +85,16 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
         if not self.position:
             # Enter long position on golden cross
             if crossover > 0:
-                self.log(f'GOLDEN CROSS: MA({self.params.short_period})={short_ma:.2f} > MA({self.params.long_period})={long_ma:.2f} - BUYING')
-                self.order = self.buy(size=self.params.position_size)
+                position_size = self.calculate_position_size()
+                if position_size > 0:
+                    self.log(f'GOLDEN CROSS: MA({self.params.short_period})={short_ma:.2f} > MA({self.params.long_period})={long_ma:.2f} - BUYING {position_size} shares')
+                    self.order = self.buy(size=position_size)
+                else:
+                    self.log(f'GOLDEN CROSS: MA({self.params.short_period})={short_ma:.2f} > MA({self.params.long_period})={long_ma:.2f} - Insufficient cash')
                 
         else:
             # Exit long position on death cross
             if crossover < 0:
-                self.log(f'DEATH CROSS: MA({self.params.short_period})={short_ma:.2f} < MA({self.params.long_period})={long_ma:.2f} - SELLING')
-                self.order = self.sell(size=self.params.position_size) 
+                current_position = self.position.size
+                self.log(f'DEATH CROSS: MA({self.params.short_period})={short_ma:.2f} < MA({self.params.long_period})={long_ma:.2f} - SELLING {current_position} shares')
+                self.order = self.sell(size=current_position) 

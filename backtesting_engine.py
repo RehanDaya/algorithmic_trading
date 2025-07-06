@@ -139,13 +139,6 @@ class TradingSystem:
             # Fetch benchmark data
             benchmark_ticker = yf.Ticker(self.benchmark)
             self.benchmark_data = benchmark_ticker.history(period=period, interval=interval)
-            
-            # If intraday data fails, fallback to daily data with original period
-            if self.data.empty or self.benchmark_data.empty:
-                print(f"⚠️  Intraday data unavailable, falling back to daily data for {period}")
-                self.data = ticker.history(period='6mo', interval='1d')
-                self.benchmark_data = benchmark_ticker.history(period='6mo', interval='1d')
-                self.current_interval = '1d'  # Update stored interval
                 
             if self.data.empty or self.benchmark_data.empty:
                 raise ValueError("No data retrieved from yfinance")
@@ -505,8 +498,6 @@ class TradingSystem:
                                 avg_duration_hours = avg_duration * (compression * 24 * 7)  # weeks to hours
                             elif timeframe == bt.TimeFrame.Months:
                                 avg_duration_hours = avg_duration * (compression * 24 * 30)  # approx months to hours
-                            else:
-                                avg_duration_hours = avg_duration  # fallback
                                 
                             metrics['avg_trade_duration_hours'] = avg_duration_hours
             except Exception as e:
@@ -570,44 +561,27 @@ class TradingSystem:
     
     def calculate_strategy_returns(self) -> pd.Series:
         """Calculate strategy returns from backtest"""
-        try:
-            returns_analysis = self.results['analyzers'].returns.get_analysis()
-            if returns_analysis:
-                return pd.Series(list(returns_analysis.values()))
-            else:
-                # Fallback: calculate from equity curve
-                time_return_analysis = self.results['analyzers'].time_return.get_analysis()
-                if time_return_analysis:
-                    return pd.Series(list(time_return_analysis.values()))
-                else:
-                    return pd.Series([])
-        except:
+        returns_analysis = self.results['analyzers'].returns.get_analysis()
+        if returns_analysis:
+            return pd.Series(list(returns_analysis.values()))
+        else:
             return pd.Series([])
     
     def calculate_benchmark_returns(self) -> pd.Series:
         """Calculate benchmark returns"""
-        try:
-            benchmark_close = self.benchmark_data['Close'].resample('D').last()
-            benchmark_returns = benchmark_close.pct_change().dropna()
-            return benchmark_returns
-        except:
-            return pd.Series([])
+        benchmark_close = self.benchmark_data['Close'].resample('D').last()
+        benchmark_returns = benchmark_close.pct_change().dropna()
+        return benchmark_returns
     
     def align_returns(self, strategy_returns: pd.Series, benchmark_returns: pd.Series) -> Dict:
         """Align strategy and benchmark returns by date"""
-        try:
-            # Create a simple alignment based on length
-            min_length = min(len(strategy_returns), len(benchmark_returns))
-            
-            if min_length > 0:
-                return {
-                    'strategy': strategy_returns.iloc[:min_length],
-                    'benchmark': benchmark_returns.iloc[:min_length]
-                }
-            else:
-                return {'strategy': pd.Series([]), 'benchmark': pd.Series([])}
-        except:
-            return {'strategy': pd.Series([]), 'benchmark': pd.Series([])}
+        # Create a simple alignment based on length
+        min_length = min(len(strategy_returns), len(benchmark_returns))
+        
+        return {
+            'strategy': strategy_returns.iloc[:min_length],
+            'benchmark': benchmark_returns.iloc[:min_length]
+        }
     
     def print_results(self, metrics: Dict, fscore: Dict):
         """Print comprehensive results"""
@@ -624,12 +598,8 @@ class TradingSystem:
             if self.strategy_instance is not None:
                 if hasattr(self.strategy_instance, 'get_strategy_description'):
                     strategy_description = self.strategy_instance.get_strategy_description()
-                else:
-                    # Fallback to strategy name if description method doesn't exist
-                    strategy_description = getattr(self.strategy_instance, '__class__', type(self.strategy_instance)).__name__
         except Exception as e:
             print(f"Error getting strategy description: {e}")
-            strategy_description = "Unknown Strategy"
         
         print(f"{'Strategy:':<25} {strategy_description}")
         print(f"{'Benchmark:':<25} {self.benchmark}")
@@ -687,11 +657,11 @@ class TradingSystem:
                     print(f"{'Short MA Period:':<25} {params.short_period}")
                     print(f"{'Long MA Period:':<25} {params.long_period}")
                 
-                print(f"{'Position Size:':<25} {params.position_size} share")
+                print(f"{'Position Sizing:':<25} Dynamic (uses full budget)")
             else:
-                print(f"{'Position Size:':<25} 1 share")
+                print(f"{'Position Sizing:':<25} Dynamic (uses full budget)")
         except Exception as e:
-            print(f"{'Position Size:':<25} 1 share (error reading params: {e})")
+            print(f"{'Position Sizing:':<25} Dynamic (uses full budget)")
         
         print(f"{'Commission:':<25} 0.1%")
         
@@ -729,25 +699,13 @@ class TradingSystem:
                 barup='green',
                 bardown='red',
                 volume=False,
-                plotname=f'{self.symbol} - RSI Mean Reversion Strategy'
+                plotname=f'{self.symbol} - {self.strategy_name}'
             )
             
             print("✓ Plots generated successfully")
             
         except Exception as e:
             print(f"❌ Error generating plots: {e}")
-            # Fallback to simple matplotlib plot
-            try:
-                plt.figure(figsize=(12, 8))
-                plt.plot(self.data.index, self.data['Close'], label=f'{self.symbol} Price')
-                plt.title(f'{self.symbol} Price Chart')
-                plt.xlabel('Date')
-                plt.ylabel('Price ($)')
-                plt.legend()
-                plt.grid(True)
-                plt.show()
-            except:
-                print("Could not generate fallback plot")
 
 
 def main():
