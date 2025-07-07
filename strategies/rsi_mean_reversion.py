@@ -51,37 +51,25 @@ class RSIMeanReversionStrategy(BaseStrategy):
         if len(self.data) < self.params.rsi_period:
             return False
             
-        current_rsi = self.rsi[0]
-        return current_rsi < self.params.rsi_oversold
+        try:
+            current_rsi = self.rsi[0]
+            return current_rsi < self.params.rsi_oversold
+        except:
+            return False
     
     def should_sell(self) -> bool:
         """Check if RSI is overbought"""
-        current_rsi = self.rsi[0]
-        return current_rsi > self.params.rsi_overbought
+        try:
+            current_rsi = self.rsi[0]
+            return current_rsi > self.params.rsi_overbought
+        except:
+            return False
     
     def next(self):
-        """Override next to add RSI logging"""
-        # Skip if we have a pending order
-        if self.order:
-            return
-        
+        """Use base strategy next method with RSI-specific conditions"""
         # Skip if we don't have enough data
         if len(self.data) < self.params.rsi_period:
             return
             
-        current_rsi = self.rsi[0]
-        
-        # Check if we're not in a position
-        if not self.position:
-            # Enter long position when RSI is oversold
-            if current_rsi < self.params.rsi_oversold:
-                self.log(f'RSI OVERSOLD: {current_rsi:.2f} - BUYING')
-                # Use backtrader's built-in order_target_percent
-                self.order = self.order_target_percent(target=0.99)
-                
-        else:
-            # Exit long position when RSI is overbought
-            if current_rsi > self.params.rsi_overbought:
-                self.log(f'RSI OVERBOUGHT: {current_rsi:.2f} - SELLING')
-                # Close position using backtrader's built-in method
-                self.order = self.order_target_percent(target=0.0) 
+        # Call base strategy next method which handles the trading logic
+        super().next() 

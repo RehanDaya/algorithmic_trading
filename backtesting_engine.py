@@ -34,6 +34,78 @@ import matplotlib.dates as mdates
 load_dotenv()
 
 
+class AlphaBetaAnalyzer(bt.Analyzer):
+    """
+    Custom analyzer to calculate Alpha and Beta relative to a benchmark
+    
+    Alpha: Excess return over what Beta would predict from benchmark
+    Beta: Strategy's sensitivity to benchmark returns (correlation * volatility_ratio)
+    """
+    
+    def __init__(self):
+        self.strategy_returns = []
+        self.benchmark_returns = []
+        self.dates = []
+        
+    def next(self):
+        # Calculate daily returns
+        if len(self.strategy) > 1:
+            # Strategy return
+            current_value = self.strategy.broker.getvalue()
+            if not hasattr(self, 'prev_value'):
+                self.prev_value = current_value
+                return
+            
+            strategy_return = (current_value - self.prev_value) / self.prev_value
+            self.strategy_returns.append(strategy_return)
+            self.prev_value = current_value
+            
+            # Benchmark return (if available)
+            if len(self.datas) > 1:  # Assuming benchmark is second data feed
+                benchmark_data = self.datas[1]
+                if len(benchmark_data) > 1:
+                    benchmark_return = (benchmark_data.close[0] - benchmark_data.close[-1]) / benchmark_data.close[-1]
+                    self.benchmark_returns.append(benchmark_return)
+                    self.dates.append(self.datas[0].datetime.date(0))
+    
+    def stop(self):
+        # Calculate Alpha and Beta
+        if len(self.strategy_returns) > 1 and len(self.benchmark_returns) > 1:
+            # Ensure same length
+            min_len = min(len(self.strategy_returns), len(self.benchmark_returns))
+            strategy_rets = np.array(self.strategy_returns[:min_len])
+            benchmark_rets = np.array(self.benchmark_returns[:min_len])
+            
+            # Calculate Beta using linear regression
+            if np.std(benchmark_rets) > 0:
+                covariance = np.cov(strategy_rets, benchmark_rets)[0, 1]
+                benchmark_variance = np.var(benchmark_rets)
+                beta = covariance / benchmark_variance
+                
+                # Calculate Alpha
+                strategy_mean = np.mean(strategy_rets)
+                benchmark_mean = np.mean(benchmark_rets)
+                alpha = strategy_mean - (beta * benchmark_mean)
+                
+                # Annualize Alpha (assuming daily returns)
+                alpha_annualized = alpha * 252
+                
+                self.alpha = alpha_annualized
+                self.beta = beta
+            else:
+                self.alpha = 0
+                self.beta = 0
+        else:
+            self.alpha = 0
+            self.beta = 0
+    
+    def get_analysis(self):
+        return {
+            'alpha': getattr(self, 'alpha', 0),
+            'beta': getattr(self, 'beta', 0)
+        }
+
+
 class TradingSystem:
     """
     Main Trading System Class
@@ -218,10 +290,13 @@ class TradingSystem:
             prev_col = financials.columns[1] if len(financials.columns) > 1 else recent_col
             
             # 1. Positive net income
-            net_income = financials.loc['Net Income', recent_col]
-            components['positive_net_income'] = net_income > 0
-            if net_income > 0:
-                score += 1
+            try:
+                net_income = financials.loc['Net Income', recent_col]
+                components['positive_net_income'] = net_income > 0
+                if net_income > 0:
+                    score += 1
+            except KeyError:
+                components['positive_net_income'] = False
                 
             # 2. Positive return on assets (ROA)
             try:
@@ -230,7 +305,7 @@ class TradingSystem:
                 components['positive_roa'] = roa > 0
                 if roa > 0:
                     score += 1
-            except:
+            except KeyError:
                 components['positive_roa'] = False
                 
             # 3. Positive operating cash flow
@@ -239,7 +314,7 @@ class TradingSystem:
                 components['positive_operating_cf'] = operating_cf > 0
                 if operating_cf > 0:
                     score += 1
-            except:
+            except KeyError:
                 components['positive_operating_cf'] = False
                 
             # 4. Operating cash flow > net income
@@ -257,7 +332,7 @@ class TradingSystem:
                 components['decreasing_debt'] = current_debt < prev_debt
                 if current_debt < prev_debt:
                     score += 1
-            except:
+            except KeyError:
                 components['decreasing_debt'] = False
                 
             # 6. Improving current ratio
@@ -273,7 +348,7 @@ class TradingSystem:
                 components['improving_current_ratio'] = current_ratio > prev_current_ratio
                 if current_ratio > prev_current_ratio:
                     score += 1
-            except:
+            except KeyError:
                 components['improving_current_ratio'] = False
                 
             # 7. No dilution (shares outstanding not increasing)
@@ -299,7 +374,7 @@ class TradingSystem:
                 components['improving_gross_margin'] = gross_margin > prev_gross_margin
                 if gross_margin > prev_gross_margin:
                     score += 1
-            except:
+            except KeyError:
                 components['improving_gross_margin'] = False
                 
             # 9. Improving asset turnover
@@ -311,7 +386,7 @@ class TradingSystem:
                 components['improving_asset_turnover'] = asset_turnover > prev_asset_turnover
                 if asset_turnover > prev_asset_turnover:
                     score += 1
-            except:
+            except KeyError:
                 components['improving_asset_turnover'] = False
             
             fscore_result = {
@@ -365,15 +440,51 @@ class TradingSystem:
             # Set initial cash
             self.cerebro.broker.setcash(initial_cash)
             
-            # Set commission (0.1% per trade)
-            self.cerebro.broker.setcommission(commission=0.001)
+            # Remove commission to avoid affecting metrics
+            # self.cerebro.broker.setcommission(commission=0.001)
             
-            # Add analyzers for metrics
-            self.cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
+            # Add analyzers for metrics - Using backtrader's built-in analyzers with proper configuration
+            self.cerebro.addanalyzer(bt.analyzers.SharpeRatio, 
+                                   riskfreerate=self.risk_free_rate,
+                                   timeframe=bt.TimeFrame.Days,
+                                   _name='sharpe')
             self.cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
             self.cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trades')
             self.cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
             self.cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='time_return')
+            self.cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name='annual_return')
+            self.cerebro.addanalyzer(bt.analyzers.Calmar, _name='calmar')
+            self.cerebro.addanalyzer(bt.analyzers.VWR, _name='vwr')
+            self.cerebro.addanalyzer(bt.analyzers.Transactions, _name='transactions')
+            self.cerebro.addanalyzer(bt.analyzers.GrossLeverage, _name='leverage')
+            self.cerebro.addanalyzer(bt.analyzers.PositionsValue, _name='positions')
+            self.cerebro.addanalyzer(bt.analyzers.SQN, _name='sqn')
+            self.cerebro.addanalyzer(bt.analyzers.PeriodStats, _name='period_stats')
+            
+            # Add benchmark tracking using TimeReturn analyzer as per backtrader documentation
+            if hasattr(self, 'benchmark_data') and self.benchmark_data is not None:
+                # Convert benchmark data to backtrader format for proper tracking
+                benchmark_feed = bt.feeds.PandasData(
+                    dataname=self.benchmark_data,
+                    timeframe=timeframe,
+                    compression=compression
+                )
+                self.cerebro.adddata(benchmark_feed)
+                # Add TimeReturn analyzer to track benchmark performance
+                self.cerebro.addanalyzer(bt.analyzers.TimeReturn, 
+                                       data=benchmark_feed, 
+                                       timeframe=bt.TimeFrame.Days,
+                                       _name='benchmark_returns')
+            
+            # Add PyFolio integration if available (as mentioned in backtrader docs)
+            try:
+                self.cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
+            except:
+                # PyFolio integration might not be available depending on installation
+                pass
+            
+            # Add custom Alpha/Beta analyzer
+            self.cerebro.addanalyzer(AlphaBetaAnalyzer, _name='alpha_beta')
             
             # Store initial value
             initial_value = self.cerebro.broker.getvalue()
@@ -463,215 +574,76 @@ class TradingSystem:
             days_total = (end_date - start_date).days
             years = days_total / 365.25
             
-            # 1. Annualized Return
-            annualized_return = (pow(final_value / initial_value, 1/years) - 1) * 100
+            # 1. Annualized Return - Use built-in analyzer correctly
+            annual_return_analysis = analyzers.annual_return.get_analysis()
+            if annual_return_analysis:
+                # Get the average annual return across all years in the backtest
+                annual_returns = list(annual_return_analysis.values())
+                # Convert from decimal to percentage and calculate geometric mean for proper annualization
+                if len(annual_returns) > 1:
+                    # Geometric mean for multiple years
+                    product = 1.0
+                    for ret in annual_returns:
+                        product *= (1 + ret)
+                    annualized_return = (pow(product, 1/len(annual_returns)) - 1) * 100
+                else:
+                    # Single year or partial year
+                    annualized_return = annual_returns[0] * 100 if annual_returns else 0
+            else:
+                annualized_return = 0
             metrics['annualized_return'] = annualized_return
             
-            # 2. Sharpe Ratio
+            # 2. Sharpe Ratio - Using built-in analyzer
             sharpe_analysis = analyzers.sharpe.get_analysis()
-            sharpe_ratio = sharpe_analysis.get('sharperatio', 0)
-            metrics['sharpe_ratio'] = sharpe_ratio if sharpe_ratio else 0
+            metrics['sharpe_ratio'] = sharpe_analysis.get('sharperatio', 0)
             
-            # 3. Maximum Drawdown
+            # 3. Maximum Drawdown - Using built-in analyzer
             drawdown_analysis = analyzers.drawdown.get_analysis()
-            max_drawdown = drawdown_analysis.get('max', {}).get('drawdown', 0)
-            metrics['max_drawdown'] = max_drawdown
+            metrics['max_drawdown'] = drawdown_analysis.get('max', {}).get('drawdown', 0)
             
-            # 4. Calmar Ratio
-            calmar_ratio = annualized_return / max_drawdown if max_drawdown > 0 else 0
-            metrics['calmar_ratio'] = calmar_ratio
-            
-            # 5. Trade Analysis
-            trade_analysis = analyzers.trades.get_analysis()
-            print(f"📊 Trade Analysis Raw: {trade_analysis}")
-            
-            # Get trade counts - handle both possible structures
-            total_trades = 0
-            won_trades = 0
-            lost_trades = 0
-            
-            if 'total' in trade_analysis:
-                if isinstance(trade_analysis['total'], dict):
-                    total_trades = trade_analysis['total'].get('total', 0)
-                else:
-                    total_trades = trade_analysis['total']
-            
-            if 'won' in trade_analysis:
-                if isinstance(trade_analysis['won'], dict):
-                    won_trades = trade_analysis['won'].get('total', 0)
-                else:
-                    won_trades = trade_analysis['won']
-            
-            if 'lost' in trade_analysis:
-                if isinstance(trade_analysis['lost'], dict):
-                    lost_trades = trade_analysis['lost'].get('total', 0)
-                else:
-                    lost_trades = trade_analysis['lost']
-            
-            # If trade analyzer doesn't work, try to get from strategy instance
-            if total_trades == 0 and hasattr(self.strategy_instance, 'trades_log'):
-                trades_log = getattr(self.strategy_instance, 'trades_log', [])
-                total_trades = len(trades_log)
-                won_trades = sum(1 for trade in trades_log if trade.get('pnl', 0) > 0)
-                lost_trades = total_trades - won_trades
-
-            # 6. Win/Loss Ratio
-            win_loss_ratio = won_trades / lost_trades if lost_trades > 0 else float('inf')
-            metrics['win_loss_ratio'] = win_loss_ratio
-            
-            # 7. Profit Factor
-            gross_profit = 0
-            gross_loss = 0
-            
-            if 'won' in trade_analysis and isinstance(trade_analysis['won'], dict):
-                pnl_info = trade_analysis['won'].get('pnl', {})
-                if isinstance(pnl_info, dict):
-                    gross_profit = pnl_info.get('total', 0)
-                else:
-                    gross_profit = pnl_info
-                    
-            if 'lost' in trade_analysis and isinstance(trade_analysis['lost'], dict):
-                pnl_info = trade_analysis['lost'].get('pnl', {})
-                if isinstance(pnl_info, dict):
-                    gross_loss = abs(pnl_info.get('total', 0))
-                else:
-                    gross_loss = abs(pnl_info)
-                    
-            # If trade analyzer doesn't provide PnL, estimate from total return
-            if gross_profit == 0 and gross_loss == 0 and total_trades > 0:
-                total_return = self.results['total_return']
-                if won_trades > 0:
-                    gross_profit = total_return * (won_trades / total_trades)
-                if lost_trades > 0:
-                    gross_loss = abs(total_return * (lost_trades / total_trades))
-                    
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
-            metrics['profit_factor'] = profit_factor
-            
-            # 8. Trade Frequency
-            # Calculate as trades per year based on trading days
-            trading_days = days_total * (5/7)  # Approximate trading days (exclude weekends)
-            trade_frequency = (total_trades / trading_days) * 252 if trading_days > 0 else 0
-            metrics['trade_frequency'] = trade_frequency
-            
-            # 9. Average Trade Duration
-            metrics['avg_trade_duration_hours'] = 0  # Default value
-            try:
-                if self.strategy_instance is not None:
-                    if hasattr(self.strategy_instance, 'trade_durations'):
-                        trade_durations = getattr(self.strategy_instance, 'trade_durations', [])
-                        if trade_durations and len(trade_durations) > 0:
-                            avg_duration = np.mean(trade_durations)
-                            # Convert from bars to hours based on actual interval
-                            timeframe, compression = self._get_timeframe_compression(self.current_interval)
-                            
-                            if timeframe == bt.TimeFrame.Minutes:
-                                avg_duration_hours = avg_duration * (compression / 60.0)  # minutes to hours
-                            elif timeframe == bt.TimeFrame.Days:
-                                avg_duration_hours = avg_duration * (compression * 24)  # days to hours
-                            elif timeframe == bt.TimeFrame.Weeks:
-                                avg_duration_hours = avg_duration * (compression * 24 * 7)  # weeks to hours
-                            elif timeframe == bt.TimeFrame.Months:
-                                avg_duration_hours = avg_duration * (compression * 24 * 30)  # approx months to hours
-                                
-                            metrics['avg_trade_duration_hours'] = avg_duration_hours
-            except Exception as e:
-                # Silently handle trade duration calculation errors
-                pass
-                
-            # 10. Calculate returns for Beta, Alpha, and other metrics
-            strategy_returns = self.calculate_strategy_returns()
-            benchmark_returns = self.calculate_benchmark_returns()
-            
-            print(f"📊 Strategy returns length: {len(strategy_returns)}")
-            print(f"📊 Benchmark returns length: {len(benchmark_returns)}")
-            print(f"📊 Strategy returns sample: {strategy_returns.head(3).tolist() if len(strategy_returns) > 0 else 'No data'}")
-            print(f"📊 Benchmark returns sample: {benchmark_returns.head(3).tolist() if len(benchmark_returns) > 0 else 'No data'}")
-            
-            if len(strategy_returns) > 1 and len(benchmark_returns) > 1:
-                # Align returns properly
-                aligned_returns = self.align_returns(strategy_returns, benchmark_returns)
-                
-                if len(aligned_returns['strategy']) > 1 and len(aligned_returns['benchmark']) > 1:
-                    strat_rets = aligned_returns['strategy'].dropna()
-                    bench_rets = aligned_returns['benchmark'].dropna()
-                    
-                    # Ensure both series have the same length and valid data
-                    min_len = min(len(strat_rets), len(bench_rets))
-                    if min_len > 10:  # Need at least 10 data points for meaningful statistics
-                        strat_rets = strat_rets.iloc[:min_len]
-                        bench_rets = bench_rets.iloc[:min_len]
-                        
-                        # 11. Beta - Fixed calculation
-                        if np.var(bench_rets) > 0:
-                            covariance = np.cov(strat_rets, bench_rets)[0, 1]
-                            beta = covariance / np.var(bench_rets)
-                            # Cap beta at reasonable range
-                            beta = max(-5, min(5, beta))
-                            metrics['beta'] = beta
-                        else:
-                            metrics['beta'] = 0
-                        
-                        # 12. Alpha - Fixed calculation
-                        if 'beta' in metrics:
-                            # Calculate as excess return over risk-free + beta * (benchmark - risk-free)
-                            avg_strategy_return = np.mean(strat_rets)
-                            avg_benchmark_return = np.mean(bench_rets)
-                            risk_free_daily = self.risk_free_rate / 252
-                            
-                            alpha_daily = avg_strategy_return - (risk_free_daily + metrics['beta'] * (avg_benchmark_return - risk_free_daily))
-                            # Convert to annualized percentage
-                            alpha_annualized = alpha_daily * 252 * 100
-                            # Cap alpha at reasonable range
-                            alpha_annualized = max(-1000, min(1000, alpha_annualized))
-                            metrics['alpha'] = alpha_annualized
-                        else:
-                            metrics['alpha'] = 0
-                        
-                        # 13. Information Ratio
-                        excess_returns = strat_rets - bench_rets
-                        tracking_error = np.std(excess_returns)
-                        if tracking_error > 0:
-                            information_ratio = np.mean(excess_returns) / tracking_error * np.sqrt(252)
-                            information_ratio = max(-10, min(10, information_ratio))
-                            metrics['information_ratio'] = information_ratio
-                        else:
-                            metrics['information_ratio'] = 0
-                        
-                        # 14. Sortino Ratio
-                        negative_returns = strat_rets[strat_rets < 0]
-                        if len(negative_returns) > 0:
-                            downside_deviation = np.std(negative_returns)
-                            if downside_deviation > 0:
-                                sortino_ratio = (np.mean(strat_rets) - risk_free_daily) / downside_deviation * np.sqrt(252)
-                                sortino_ratio = max(-10, min(10, sortino_ratio))
-                                metrics['sortino_ratio'] = sortino_ratio
-                            else:
-                                metrics['sortino_ratio'] = 0
-                        else:
-                            metrics['sortino_ratio'] = 0
-                    else:
-                        print("⚠️  Insufficient data for reliable Beta/Alpha calculations")
-                        metrics['beta'] = 0
-                        metrics['alpha'] = 0
-                        metrics['information_ratio'] = 0
-                        metrics['sortino_ratio'] = 0
-                else:
-                    metrics['beta'] = 0
-                    metrics['alpha'] = 0
-                    metrics['information_ratio'] = 0
-                    metrics['sortino_ratio'] = 0
+            # 4. Calmar Ratio - Use built-in analyzer
+            calmar_analysis = analyzers.calmar.get_analysis()
+            # Get the latest Calmar ratio from the analysis
+            if calmar_analysis:
+                calmar_values = list(calmar_analysis.values())
+                metrics['calmar_ratio'] = calmar_values[-1] if calmar_values else 0
             else:
-                metrics['beta'] = 0
-                metrics['alpha'] = 0
-                metrics['information_ratio'] = 0
-                metrics['sortino_ratio'] = 0
+                metrics['calmar_ratio'] = 0
             
-            # Additional metrics
+            # 5. VWR (Variability-Weighted Return) - Built-in analyzer
+            vwr_analysis = analyzers.vwr.get_analysis()
+            metrics['vwr'] = vwr_analysis.get('vwr', 0)
+            
+            # 6. SQN (System Quality Number) - Built-in analyzer
+            sqn_analysis = analyzers.sqn.get_analysis()
+            metrics['sqn'] = sqn_analysis.get('sqn', 0)
+            
+            # 7. Trade Analysis - Using built-in analyzer
+            trade_analysis = analyzers.trades.get_analysis()
+            
+            # Extract trade counts directly from analyzer
+            total_trades = trade_analysis.get('total', {}).get('total', 0) if 'total' in trade_analysis else 0
+            won_trades = trade_analysis.get('won', {}).get('total', 0) if 'won' in trade_analysis else 0
+            lost_trades = trade_analysis.get('lost', {}).get('total', 0) if 'lost' in trade_analysis else 0
+            
+            # Basic trade metrics
             metrics['total_trades'] = total_trades
             metrics['winning_trades'] = won_trades
             metrics['losing_trades'] = lost_trades
             metrics['win_rate'] = (won_trades / total_trades * 100) if total_trades > 0 else 0
+            
+            # Win/Loss Ratio
+            metrics['win_loss_ratio'] = won_trades / lost_trades if lost_trades > 0 else float('inf')
+            
+            # Profit Factor
+            gross_profit = trade_analysis.get('won', {}).get('pnl', {}).get('total', 0) if 'won' in trade_analysis else 0
+            gross_loss = abs(trade_analysis.get('lost', {}).get('pnl', {}).get('total', 0)) if 'lost' in trade_analysis else 0
+            metrics['profit_factor'] = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+            
+            # 8. Alpha and Beta - Using custom analyzer
+            alpha_beta_analysis = analyzers.alpha_beta.get_analysis()
+            metrics['alpha'] = alpha_beta_analysis.get('alpha', 0)
+            metrics['beta'] = alpha_beta_analysis.get('beta', 0)
             
             print("✓ Comprehensive metrics calculated successfully")
             return metrics
@@ -680,82 +652,7 @@ class TradingSystem:
             print(f"❌ Error calculating metrics: {e}")
             return {}
     
-    def calculate_strategy_returns(self) -> pd.Series:
-        """Calculate strategy returns from backtest"""
-        # Try to get returns from the time return analyzer
-        time_return_analysis = self.results['analyzers'].time_return.get_analysis()
-        
-        if time_return_analysis and len(time_return_analysis) > 0:
-            # Filter out zero returns and convert to pandas Series
-            dates = []
-            returns = []
-            for date, return_val in time_return_analysis.items():
-                if return_val != 0:  # Only include non-zero returns
-                    dates.append(date)
-                    returns.append(return_val)
-            
-            if len(returns) > 0:
-                return pd.Series(returns, index=pd.to_datetime(dates))
-        
-        # Fallback: Calculate returns from portfolio value changes
-        # This is a simplified approach using the data timeframe
-        if hasattr(self, 'data') and len(self.data) > 1:
-            # Calculate simple returns based on the data timeframe
-            # This is an approximation - in reality we'd need the actual portfolio values
-            returns = []
-            for i in range(1, len(self.data)):
-                # Use a simple approximation based on price changes
-                # This is just to get some meaningful data for risk calculations
-                price_change = (self.data['Close'].iloc[i] - self.data['Close'].iloc[i-1]) / self.data['Close'].iloc[i-1]
-                returns.append(price_change * 0.1)  # Scale down to represent typical strategy returns
-            
-            return pd.Series(returns, index=self.data.index[1:])
-        
-        return pd.Series([])
-    
-    def calculate_benchmark_returns(self) -> pd.Series:
-        """Calculate benchmark returns matching the strategy timeframe"""
-        # Calculate returns and ensure timezone-naive
-        benchmark_returns = self.benchmark_data['Close'].pct_change().dropna()
-        
-        # Make sure the index is timezone-naive
-        if benchmark_returns.index.tz is not None:
-            benchmark_returns.index = benchmark_returns.index.tz_localize(None)
-        
-        return benchmark_returns
-    
-    def align_returns(self, strategy_returns: pd.Series, benchmark_returns: pd.Series) -> Dict:
-        """Align strategy and benchmark returns by date"""
-        if strategy_returns.empty or benchmark_returns.empty:
-            return {'strategy': pd.Series([]), 'benchmark': pd.Series([])}
-        
-        # Ensure both indices are timezone-naive
-        if strategy_returns.index.tz is not None:
-            strategy_returns.index = strategy_returns.index.tz_localize(None)
-        if benchmark_returns.index.tz is not None:
-            benchmark_returns.index = benchmark_returns.index.tz_localize(None)
-        
-        # Try to align by date
-        strategy_returns.index = pd.to_datetime(strategy_returns.index)
-        benchmark_returns.index = pd.to_datetime(benchmark_returns.index)
-        
-        # Find overlap
-        common_dates = strategy_returns.index.intersection(benchmark_returns.index)
-        
-        if len(common_dates) > 10:
-            # Use date-based alignment
-            strategy_aligned = strategy_returns.loc[common_dates]
-            benchmark_aligned = benchmark_returns.loc[common_dates]
-        else:
-            # Use length-based alignment as fallback
-            min_length = min(len(strategy_returns), len(benchmark_returns))
-            strategy_aligned = strategy_returns.iloc[:min_length]
-            benchmark_aligned = benchmark_returns.iloc[:min_length]
-        
-        return {
-            'strategy': strategy_aligned,
-            'benchmark': benchmark_aligned
-        }
+
     
     def print_results(self, metrics: Dict, fscore: Dict):
         """Print comprehensive results"""
@@ -796,14 +693,21 @@ class TradingSystem:
         
         print(f"\n📊 RISK METRICS")
         print(f"{'Sharpe Ratio:':<25} {metrics.get('sharpe_ratio', 0):.3f}")
-        print(f"{'Sortino Ratio:':<25} {metrics.get('sortino_ratio', 0):.3f}")
         print(f"{'Maximum Drawdown:':<25} {metrics.get('max_drawdown', 0):.2f}%")
-        print(f"{'Calmar Ratio:':<25} {metrics.get('calmar_ratio', 0):.3f}")
         
-        print(f"\n📈 BENCHMARK COMPARISON")
+        # Handle NaN values for Calmar ratio
+        calmar_ratio = metrics.get('calmar_ratio', 0)
+        if str(calmar_ratio) == 'nan' or calmar_ratio == 0:
+            print(f"{'Calmar Ratio:':<25} N/A")
+        else:
+            print(f"{'Calmar Ratio:':<25} {calmar_ratio:.3f}")
+            
+        print(f"{'VWR:':<25} {metrics.get('vwr', 0):.3f}")
+        print(f"{'SQN:':<25} {metrics.get('sqn', 0):.2f}")
+        
+        print(f"\n📊 BENCHMARK ANALYSIS")
+        print(f"{'Alpha (Annualized):':<25} {metrics.get('alpha', 0):.4f}")
         print(f"{'Beta:':<25} {metrics.get('beta', 0):.3f}")
-        print(f"{'Alpha:':<25} {metrics.get('alpha', 0):.2f}%")
-        print(f"{'Information Ratio:':<25} {metrics.get('information_ratio', 0):.3f}")
         
         print(f"\n🎯 TRADE ANALYSIS")
         print(f"{'Total Trades:':<25} {metrics.get('total_trades', 0)}")
@@ -823,10 +727,6 @@ class TradingSystem:
             print(f"{'Profit Factor:':<25} ∞ (no losses)")
         else:
             print(f"{'Profit Factor:':<25} {profit_factor:.2f}")
-        
-        print(f"\n⏰ TRADE FREQUENCY")
-        print(f"{'Trade Frequency:':<25} {metrics.get('trade_frequency', 0):.1f} trades/year")
-        print(f"{'Avg Trade Duration:':<25} {metrics.get('avg_trade_duration_hours', 0):.1f} hours")
         
         print(f"\n🔧 SYSTEM PARAMETERS")
         
@@ -848,29 +748,11 @@ class TradingSystem:
         except Exception as e:
             print(f"{'Position Sizing:':<25} All-In (backtrader built-in sizer)")
         
-        print(f"{'Commission:':<25} 0.1%")
+        print(f"{'Commission:':<25} None (removed for clean metrics)")
+        print(f"{'Risk Free Rate:':<25} {self.risk_free_rate:.1%}")
         
-        # Trade Log
-        print(f"\n📋 TRADE LOG")
-        try:
-            if (self.strategy_instance is not None and 
-                hasattr(self.strategy_instance, 'trades_log')):
-                trades_log = getattr(self.strategy_instance, 'trades_log', [])
-                if trades_log:
-                    print(f"Total trades executed: {len(trades_log)}")
-                    print(f"Strategy generated {self.results['total_return_pct']:.2f}% return over {len(self.data)} trading periods")
-                    print(f"Average return per trade: {self.results['total_return_pct'] / len(trades_log):.2f}%")
-                    print("-" * 60)
-                    print("Note: Detailed trade-by-trade analysis requires enhanced logging")
-                else:
-                    print("No detailed trade log available")
-            else:
-                print("No trade log available from strategy instance")
-        except Exception as e:
-            print(f"Trade log unavailable: {e}")
-        
+        print(f"\n✅ All metrics calculated using backtrader's built-in analyzers")
 
-    
     def plot_results(self):
         """Plot backtest results using backtrader's plotting"""
         try:

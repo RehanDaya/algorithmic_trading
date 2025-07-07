@@ -59,39 +59,25 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
         if len(self.data) < self.params.long_period:
             return False
             
-        # Check for golden cross (crossover > 0)
-        return self.crossover[0] > 0
+        try:
+            # Check for golden cross (crossover > 0)
+            return self.crossover[0] > 0
+        except:
+            return False
     
     def should_sell(self) -> bool:
         """Check if short MA crosses below long MA"""
-        # Check for death cross (crossover < 0)
-        return self.crossover[0] < 0
+        try:
+            # Check for death cross (crossover < 0)
+            return self.crossover[0] < 0
+        except:
+            return False
     
     def next(self):
-        """Override next to add MA crossover logging"""
-        # Skip if we have a pending order
-        if self.order:
-            return
-        
+        """Use base strategy next method with MA crossover-specific conditions"""
         # Skip if we don't have enough data
         if len(self.data) < self.params.long_period:
             return
             
-        short_ma = self.short_ma[0]
-        long_ma = self.long_ma[0]
-        crossover = self.crossover[0]
-        
-        # Check if we're not in a position
-        if not self.position:
-            # Enter long position on golden cross
-            if crossover > 0:
-                self.log(f'GOLDEN CROSS: MA({self.params.short_period})={short_ma:.2f} > MA({self.params.long_period})={long_ma:.2f} - BUYING')
-                # Use backtrader's built-in order_target_percent
-                self.order = self.order_target_percent(target=0.99)
-                
-        else:
-            # Exit long position on death cross
-            if crossover < 0:
-                self.log(f'DEATH CROSS: MA({self.params.short_period})={short_ma:.2f} < MA({self.params.long_period})={long_ma:.2f} - SELLING')
-                # Close position using backtrader's built-in method
-                self.order = self.order_target_percent(target=0.0) 
+        # Call base strategy next method which handles the trading logic
+        super().next() 
