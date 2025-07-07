@@ -37,43 +37,40 @@ class MomentumStrategy(BaseStrategy):
     """
     
     params = (
-        ('momentum_period', 14),    # Period for momentum calculation
-        ('roc_period', 14),         # Period for Rate of Change calculation
-        ('buy_threshold', 0.5),     # ROC threshold for buy signal (%)
-        ('sell_threshold', -0.5),   # ROC threshold for sell signal (%)
+        ('williams_period', 40),    # Williams %R period (as recommended)
+        ('oversold_level', -80),    # Oversold threshold
+        ('overbought_level', -20),  # Overbought threshold  
+        ('signal_level', -50),      # Signal line for entry/exit
         ('printlog', False),
     )
     
     def init_indicators(self):
-        """Initialize momentum indicators"""
-        # Rate of Change indicator
-        self.roc = bt.indicators.RateOfChange(
-            self.data.close,
-            period=self.params.roc_period
+        """Initialize Williams %R momentum indicator"""
+        # Williams %R indicator (the recommended momentum indicator)
+        self.williams_r = bt.indicators.WilliamsR(
+            self.data,
+            period=self.params.williams_period
         )
         
-        # Momentum oscillator (price - price N periods ago)
-        self.momentum = bt.indicators.Momentum(
-            self.data.close,
-            period=self.params.momentum_period
-        )
-        
-        # Moving average of ROC for trend confirmation
-        self.roc_ma = bt.indicators.SMA(
-            self.roc,
-            period=5
-        )
+        # Simple trend filter using moving averages
+        self.sma_fast = bt.indicators.SMA(self.data.close, period=20)
+        self.sma_slow = bt.indicators.SMA(self.data.close, period=50)
     
     def get_strategy_name(self) -> str:
         return "Momentum"
     
     def get_strategy_description(self) -> str:
-        return f"Momentum({self.params.roc_period}): Buy ROC > {self.params.buy_threshold}%, sell ROC < {self.params.sell_threshold}%"
+        return f"Williams %R({self.params.williams_period}): Buy oversold rally above {self.params.signal_level}, sell below {self.params.signal_level}"
     
     def should_buy(self) -> bool:
-        """Check if momentum is strong and positive"""
-        return self.roc[0] > self.params.buy_threshold
+        """Check for Williams %R oversold rally signal"""
+        # Buy when Williams %R was oversold and now rallies above signal level
+        # Also check for uptrend (fast MA > slow MA)
+        return (self.williams_r[0] > self.params.signal_level and 
+                self.williams_r[-1] <= self.params.oversold_level and
+                self.sma_fast[0] > self.sma_slow[0])
     
     def should_sell(self) -> bool:
-        """Check if momentum is weakening or negative"""
-        return self.roc[0] < self.params.sell_threshold 
+        """Check for Williams %R overbought or signal level break"""
+        return (self.williams_r[0] < self.params.signal_level or
+                self.williams_r[0] > self.params.overbought_level) 
