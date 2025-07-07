@@ -795,8 +795,8 @@ def main():
         print(f"  {i}. {name}: {description}")
     
     try:
-        # Test both strategies
-        strategy_names = ['rsi_mean_reversion', 'ma_crossover']
+        # Test all strategies
+        strategy_names = list(strategies.keys())
         
         for strategy_name in strategy_names:
             print(f"\n{'='*80}")
@@ -804,10 +804,10 @@ def main():
             print(f"{'='*80}")
             
             # Initialize trading system
-            system = TradingSystem(symbol='AAPL', benchmark='SPY', strategy=strategy_name)
+            system = TradingSystem(symbol='SPY', benchmark='SPY', strategy=strategy_name)
             
             # Fetch data
-            system.fetch_data(period='6mo', interval='15m')
+            system.fetch_data(period='2y', interval='1d')
             
             # Calculate F-Score (only once)
             if strategy_name == strategy_names[0]:

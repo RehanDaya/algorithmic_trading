@@ -57,8 +57,8 @@ class BuyAndHoldStrategy(BaseStrategy):
         # Buy once at the beginning if we haven't bought yet
         if not self.has_bought and not self.position:
             self.log(f'BUY AND HOLD: Initial purchase')
-            # Use backtrader's built-in order_target_percent to invest 99% of capital
-            self.order = self.order_target_percent(target=0.99)
+            # Use order_target_percent to invest 95% of capital
+            self.order = self.order_target_percent(target=0.95)
             self.has_bought = True
         
         # After buying, just hold - no selling logic 

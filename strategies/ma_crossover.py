@@ -55,29 +55,8 @@ class MovingAverageCrossoverStrategy(BaseStrategy):
     
     def should_buy(self) -> bool:
         """Check if short MA crosses above long MA"""
-        # Skip if we don't have enough data
-        if len(self.data) < self.params.long_period:
-            return False
-            
-        try:
-            # Check for golden cross (crossover > 0)
-            return self.crossover[0] > 0
-        except:
-            return False
+        return self.crossover[0] > 0
     
     def should_sell(self) -> bool:
         """Check if short MA crosses below long MA"""
-        try:
-            # Check for death cross (crossover < 0)
-            return self.crossover[0] < 0
-        except:
-            return False
-    
-    def next(self):
-        """Use base strategy next method with MA crossover-specific conditions"""
-        # Skip if we don't have enough data
-        if len(self.data) < self.params.long_period:
-            return
-            
-        # Call base strategy next method which handles the trading logic
-        super().next() 
+        return self.crossover[0] < 0 

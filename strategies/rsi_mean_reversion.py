@@ -47,29 +47,8 @@ class RSIMeanReversionStrategy(BaseStrategy):
     
     def should_buy(self) -> bool:
         """Check if RSI is oversold"""
-        # Skip if we don't have enough data
-        if len(self.data) < self.params.rsi_period:
-            return False
-            
-        try:
-            current_rsi = self.rsi[0]
-            return current_rsi < self.params.rsi_oversold
-        except:
-            return False
+        return self.rsi[0] < self.params.rsi_oversold
     
     def should_sell(self) -> bool:
         """Check if RSI is overbought"""
-        try:
-            current_rsi = self.rsi[0]
-            return current_rsi > self.params.rsi_overbought
-        except:
-            return False
-    
-    def next(self):
-        """Use base strategy next method with RSI-specific conditions"""
-        # Skip if we don't have enough data
-        if len(self.data) < self.params.rsi_period:
-            return
-            
-        # Call base strategy next method which handles the trading logic
-        super().next() 
+        return self.rsi[0] > self.params.rsi_overbought 

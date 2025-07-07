@@ -44,23 +44,23 @@ class BaseStrategy(bt.Strategy):
     
     def init_indicators(self):
         """Initialize strategy-specific indicators - must be implemented by subclasses"""
-        raise NotImplementedError("Subclasses must implement init_indicators()")
+        pass  # Changed from NotImplementedError to pass for compatibility
     
     def get_strategy_name(self) -> str:
         """Return strategy name - must be implemented by subclasses"""
-        raise NotImplementedError("Subclasses must implement get_strategy_name()")
+        return self.__class__.__name__
     
     def get_strategy_description(self) -> str:
         """Return strategy description - must be implemented by subclasses"""
-        raise NotImplementedError("Subclasses must implement get_strategy_description()")
+        return "Base trading strategy"
     
     def should_buy(self) -> bool:
         """Check if buy condition is met - must be implemented by subclasses"""
-        raise NotImplementedError("Subclasses must implement should_buy()")
+        return False
     
     def should_sell(self) -> bool:
         """Check if sell condition is met - must be implemented by subclasses"""
-        raise NotImplementedError("Subclasses must implement should_sell()")
+        return False
     
     def log(self, txt, dt=None):
         """Logging function for strategy"""
@@ -131,12 +131,12 @@ class BaseStrategy(bt.Strategy):
             # Check buy condition
             if self.should_buy():
                 self.log(f'{self.get_strategy_name()}: BUY SIGNAL')
-                # Use 99% of available cash for the position (backtrader built-in method)
-                self.order = self.order_target_percent(target=0.99)
+                # Use order_target_percent to invest a percentage of portfolio
+                self.order = self.order_target_percent(target=0.95)
                 
         else:
             # Check sell condition
             if self.should_sell():
                 self.log(f'{self.get_strategy_name()}: SELL SIGNAL')
-                # Close the entire position (backtrader built-in method)
+                # Close the entire position
                 self.order = self.order_target_percent(target=0.0) 
