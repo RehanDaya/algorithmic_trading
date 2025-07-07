@@ -52,7 +52,7 @@ def get_user_strategy_selection():
     
     while True:
         try:
-            user_input = input("\nYour selection: ").strip().lower()
+            user_input = input(f"\nYour selection (default: all): ").strip().lower() or 'all'
             
             if user_input == 'all' or user_input == str(len(strategy_list) + 1):
                 return list(available_strategies.keys())
@@ -85,7 +85,7 @@ def get_user_parameters():
     # Symbol selection
     print("1. Trading Symbol:")
     print("   Popular options: AAPL, MSFT, GOOGL, AMZN, TSLA, SPY, QQQ, NVDA")
-    symbol = input("   Enter symbol (default: AAPL): ").strip().upper() or 'AAPL'
+    symbol = input("   Enter symbol (default: SPY): ").strip().upper() or 'SPY'
     
     # Benchmark selection
     print("\n2. Benchmark Symbol:")
@@ -95,7 +95,7 @@ def get_user_parameters():
     # Period selection
     print("\n3. Data Period:")
     print("   Options: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max")
-    period = input("   Enter period (default: 3mo): ").strip().lower() or '3mo'
+    period = input("   Enter period (default: 2y): ").strip().lower() or '2y'
     
     # Interval selection
     print("\n4. Data Interval:")
@@ -319,7 +319,7 @@ def main():
         print(f"Interval: {parameters['interval']}")
         print(f"Initial Cash: ${parameters['initial_cash']:,.2f}")
         
-        confirm = input("\nProceed with analysis? (y/n): ").strip().lower()
+        confirm = input("\nProceed with analysis? (y/n) [default: y]: ").strip().lower() or 'y'
         if confirm not in ['y', 'yes']:
             print("❌ Analysis cancelled.")
             return
