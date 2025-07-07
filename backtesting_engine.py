@@ -413,8 +413,6 @@ class TradingSystem:
             Dictionary with backtest results
         """
         try:
-            print(f"Running backtest with ${initial_cash:,.2f} initial cash...")
-            
             # Create cerebro engine
             self.cerebro = bt.Cerebro()
             
@@ -490,7 +488,6 @@ class TradingSystem:
             initial_value = self.cerebro.broker.getvalue()
             
             # Run backtest
-            print("Executing backtest...")
             results = self.cerebro.run()
             
             # Get final value
@@ -500,7 +497,6 @@ class TradingSystem:
             if results and len(results) > 0:
                 self.strategy_instance = results[0]
             else:
-                print("❌ No results returned from backtest")
                 self.strategy_instance = None
             
             # Store results
@@ -511,11 +507,6 @@ class TradingSystem:
                 'total_return_pct': ((final_value - initial_value) / initial_value) * 100,
                 'analyzers': results[0].analyzers
             }
-            
-            print(f"✓ Backtest completed successfully")
-            print(f"  Initial Value: ${initial_value:,.2f}")
-            print(f"  Final Value: ${final_value:,.2f}")
-            print(f"  Total Return: ${final_value - initial_value:,.2f} ({((final_value - initial_value) / initial_value) * 100:.2f}%)")
             
             return self.results
             
@@ -552,8 +543,6 @@ class TradingSystem:
             Dictionary with all calculated metrics
         """
         try:
-            print("Calculating comprehensive performance metrics...")
-            
             if not self.results:
                 raise ValueError("No backtest results available")
                 
@@ -645,7 +634,6 @@ class TradingSystem:
             metrics['alpha'] = alpha_beta_analysis.get('alpha', 0)
             metrics['beta'] = alpha_beta_analysis.get('beta', 0)
             
-            print("✓ Comprehensive metrics calculated successfully")
             return metrics
             
         except Exception as e:
@@ -753,24 +741,26 @@ class TradingSystem:
         
         print(f"\n✅ All metrics calculated using backtrader's built-in analyzers")
 
-    def plot_results(self):
+    def plot_results(self, show_plots: bool = False):
         """Plot backtest results using backtrader's plotting"""
         try:
-            print("\nGenerating plots...")
-            
-            # Use backtrader's built-in plotting
-            self.cerebro.plot(
-                style='candlestick',
-                barup='green',
-                bardown='red',
-                volume=False,
-                plotname=f'{self.symbol} - {self.strategy_name}'
-            )
-            
-            print("✓ Plots generated successfully")
+            if show_plots:
+                print("\nGenerating plots...")
+                
+                # Use backtrader's built-in plotting
+                self.cerebro.plot(
+                    style='candlestick',
+                    barup='green',
+                    bardown='red',
+                    volume=False,
+                    plotname=f'{self.symbol} - {self.strategy_name}'
+                )
+                
+                print("✓ Plots generated successfully")
             
         except Exception as e:
-            print(f"❌ Error generating plots: {e}")
+            if show_plots:
+                print(f"❌ Error generating plots: {e}")
 
 
 def main():

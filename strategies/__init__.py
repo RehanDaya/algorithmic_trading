@@ -10,6 +10,13 @@ Available Strategies:
 - RSI Mean Reversion: Buy when RSI < 30, sell when RSI > 70
 - Moving Average Crossover: Buy on golden cross, sell on death cross  
 - Buy and Hold: Buy at start and hold until end (benchmark)
+- Bollinger Bands: Mean reversion using Bollinger Bands
+- MACD Crossover: Buy/sell on MACD line crossovers with signal line
+- EMA Crossover: Fast/slow EMA crossover signals
+- Stochastic Oscillator: Overbought/oversold signals with momentum confirmation
+- Momentum: Rate of change based trend following
+- Parabolic SAR: Trend following with stop and reverse signals
+- Bollinger RSI: Combined Bollinger Bands and RSI for enhanced signals
 """
 
 from typing import Dict, Type
@@ -17,12 +24,26 @@ from .base_strategy import BaseStrategy
 from .rsi_mean_reversion import RSIMeanReversionStrategy
 from .ma_crossover import MovingAverageCrossoverStrategy
 from .buy_and_hold import BuyAndHoldStrategy
+from .bollinger_bands import BollingerBandsStrategy
+from .macd_crossover import MACDCrossoverStrategy
+from .ema_crossover import EMACrossoverStrategy
+from .stochastic_oscillator import StochasticOscillatorStrategy
+from .momentum import MomentumStrategy
+from .parabolic_sar import ParabolicSARStrategy
+from .bollinger_rsi import BollingerRSIStrategy
 
 # Registry of available strategies
 AVAILABLE_STRATEGIES = {
     'rsi_mean_reversion': RSIMeanReversionStrategy,
     'ma_crossover': MovingAverageCrossoverStrategy,
     'buy_and_hold': BuyAndHoldStrategy,
+    'bollinger_bands': BollingerBandsStrategy,
+    'macd_crossover': MACDCrossoverStrategy,
+    'ema_crossover': EMACrossoverStrategy,
+    'stochastic_oscillator': StochasticOscillatorStrategy,
+    'momentum': MomentumStrategy,
+    'parabolic_sar': ParabolicSARStrategy,
+    'bollinger_rsi': BollingerRSIStrategy,
 }
 
 
@@ -67,6 +88,13 @@ __all__ = [
     'RSIMeanReversionStrategy', 
     'MovingAverageCrossoverStrategy',
     'BuyAndHoldStrategy',
+    'BollingerBandsStrategy',
+    'MACDCrossoverStrategy',
+    'EMACrossoverStrategy',
+    'StochasticOscillatorStrategy',
+    'MomentumStrategy',
+    'ParabolicSARStrategy',
+    'BollingerRSIStrategy',
     'get_strategy_class',
     'list_available_strategies',
     'AVAILABLE_STRATEGIES'

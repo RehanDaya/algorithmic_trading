@@ -23,6 +23,8 @@ SEPARATION OF CONCERNS:
 
 import os
 import sys
+import pandas as pd
+
 from backtesting_engine import TradingSystem
 from strategies import list_available_strategies
 
@@ -116,12 +118,19 @@ def get_user_parameters():
         except ValueError:
             print("   ❌ Please enter a valid number.")
     
+    # Plot display option
+    print("\n6. Display Plots:")
+    print("   Show interactive plots for strategies? (can slow down analysis)")
+    show_plots_input = input("   Display plots? (y/n) [default: n]: ").strip().lower() or 'n'
+    show_plots = show_plots_input in ['y', 'yes', 'true', '1']
+    
     return {
         'symbol': symbol,
         'benchmark': benchmark,
         'period': period,
         'interval': interval,
-        'initial_cash': initial_cash
+        'initial_cash': initial_cash,
+        'show_plots': show_plots
     }
 
 def print_detailed_analysis(system, metrics, fscore, strategy_name):
@@ -142,20 +151,26 @@ def create_strategy_summary(strategy_name, system, metrics, parameters):
     Returns:
         Dictionary with strategy summary data
     """
+    # Helper function to safely get numeric values
+    def safe_get(value, default=0):
+        if value is None or str(value) == 'nan':
+            return default
+        return value
+    
     return {
         'strategy': strategy_name,
         'symbol': parameters['symbol'],
-        'final_value': system.results['final_value'],
-        'total_return_pct': system.results['total_return_pct'],
-        'total_trades': metrics.get('total_trades', 0),
-        'win_rate': metrics.get('win_rate', 0),
-        'max_drawdown': metrics.get('max_drawdown', 0),
-        'sharpe_ratio': metrics.get('sharpe_ratio', 0),
-        'annualized_return': metrics.get('annualized_return', 0),
-        'sortino_ratio': metrics.get('sortino_ratio', 0),
-        'calmar_ratio': metrics.get('calmar_ratio', 0),
-        'beta': metrics.get('beta', 0),
-        'alpha': metrics.get('alpha', 0)
+        'final_value': safe_get(system.results['final_value'], 10000),
+        'total_return_pct': safe_get(system.results['total_return_pct'], 0),
+        'total_trades': safe_get(metrics.get('total_trades', 0), 0),
+        'win_rate': safe_get(metrics.get('win_rate', 0), 0),
+        'max_drawdown': safe_get(metrics.get('max_drawdown', 0), 0),
+        'sharpe_ratio': safe_get(metrics.get('sharpe_ratio', 0), 0),
+        'annualized_return': safe_get(metrics.get('annualized_return', 0), 0),
+        'sortino_ratio': safe_get(metrics.get('sortino_ratio', 0), 0),
+        'calmar_ratio': safe_get(metrics.get('calmar_ratio', 0), 0),
+        'beta': safe_get(metrics.get('beta', 0), 0),
+        'alpha': safe_get(metrics.get('alpha', 0), 0)
     }
 
 
@@ -173,14 +188,25 @@ def run_strategy_analysis(selected_strategies, parameters):
     # Check if single strategy or multiple
     is_single_strategy = len(selected_strategies) == 1
     
+    # Fetch data once for all strategies
+    print(f"\n{'='*60}")
+    print(f"🧪 ANALYZING {len(selected_strategies)} STRATEGIES")
+    print(f"{'='*60}")
+    
+    # Create a dummy system just to fetch data once
+    dummy_system = TradingSystem(
+        symbol=parameters['symbol'], 
+        benchmark=parameters['benchmark'], 
+        strategy=selected_strategies[0]
+    )
+    dummy_system.fetch_data(period=parameters['period'], interval=parameters['interval'])
+    fscore = dummy_system.calculate_piotroski_fscore()
+    
     # Run each strategy
     results = []
     strategy_systems = []
     
     for strategy_name in selected_strategies:
-        print(f"\n{'='*60}")
-        print(f"🧪 ANALYZING STRATEGY: {strategy_name.upper()}")
-        print(f"{'='*60}")
         
         try:
             # Initialize system
@@ -190,11 +216,10 @@ def run_strategy_analysis(selected_strategies, parameters):
                 strategy=strategy_name
             )
             
-            # Fetch data
-            system.fetch_data(period=parameters['period'], interval=parameters['interval'])
-            
-            # Calculate F-Score
-            fscore = system.calculate_piotroski_fscore()
+            # Reuse the fetched data
+            system.data = dummy_system.data
+            system.benchmark_data = dummy_system.benchmark_data
+            system.current_interval = dummy_system.current_interval
             
             # Run backtest
             system.run_backtest(initial_cash=parameters['initial_cash'])
@@ -209,26 +234,13 @@ def run_strategy_analysis(selected_strategies, parameters):
             if is_single_strategy:
                 print_detailed_analysis(system, metrics, fscore, strategy_name)
                 # Generate plot for single strategy
-                print(f"\n📊 GENERATING PLOTS FOR {strategy_name.upper()}")
-                print("="*60)
-                try:
-                    system.plot_results()
-                    print("✓ Plots generated successfully")
-                except Exception as e:
-                    print(f"❌ Error generating plots: {e}")
-                    print("  Note: Plots require matplotlib backend. Try: pip install PyQt5")
+                if parameters['show_plots']:
+                    print(f"\n📊 GENERATING PLOTS FOR {strategy_name.upper()}")
+                    print("="*60)
+                system.plot_results(show_plots=parameters['show_plots'])
             else:
-                # For multiple strategies, show brief summary
-                print(f"\n📊 STRATEGY SUMMARY:")
-                print(f"Strategy: {strategy_name}")
-                print(f"Symbol: {parameters['symbol']}")
-                print(f"Initial Value: ${system.results['initial_value']:,.2f}")
-                print(f"Final Value: ${system.results['final_value']:,.2f}")
-                print(f"Total Return: {system.results['total_return_pct']:.2f}%")
-                print(f"Total Trades: {metrics.get('total_trades', 0)}")
-                print(f"Win Rate: {metrics.get('win_rate', 0):.1f}%")
-                print(f"Max Drawdown: {metrics.get('max_drawdown', 0):.2f}%")
-                print(f"Sharpe Ratio: {metrics.get('sharpe_ratio', 0):.3f}")
+                # For multiple strategies, just continue without printing individual summaries
+                pass
             
             results.append(create_strategy_summary(strategy_name, system, metrics, parameters))
         except Exception as e:
@@ -236,17 +248,28 @@ def run_strategy_analysis(selected_strategies, parameters):
     
     # For multiple strategies, show comparison and detailed analysis
     if not is_single_strategy and len(results) > 1:
-        print(f"\n{'='*100}")
+        print(f"\n{'='*135}")
         print("🏆 STRATEGY COMPARISON SUMMARY")
-        print(f"{'='*100}")
+        print(f"{'='*135}")
         
-        print(f"{'Strategy':<25} {'Return %':<10} {'Trades':<8} {'Win %':<8} {'Max DD %':<10} {'Sharpe':<8}")
-        print("-" * 95)
-        
+        # Create DataFrame from results
+        df_data = []
         for result in results:
-            print(f"{result['strategy']:<25} {result['total_return_pct']:<9.2f} "
-                  f"{result['total_trades']:<7} {result['win_rate']:<7.1f} "
-                  f"{result['max_drawdown']:<9.2f} {result['sharpe_ratio']:<7.3f}")
+            df_data.append({
+                'Strategy': result['strategy'],
+                'Final Value': f"${result['final_value']:,.0f}",
+                'Return %': f"{result['total_return_pct']:.2f}%",
+                'Ann Ret %': f"{result['annualized_return']:.2f}%",
+                'Trades': result['total_trades'],
+                'Win %': f"{result['win_rate']:.1f}%",
+                'Max DD %': f"{result['max_drawdown']:.2f}%",
+                'Sharpe': f"{result['sharpe_ratio']:.3f}",
+                'Alpha': f"{result['alpha']:.4f}",
+                'Beta': f"{result['beta']:.3f}"
+            })
+        
+        df = pd.DataFrame(df_data)
+        print(df.to_string(index=False))
         
         # Find best performing strategy by return
         best_by_return = max(results, key=lambda x: x['total_return_pct'])
@@ -263,26 +286,18 @@ def run_strategy_analysis(selected_strategies, parameters):
         print(f"\n🛡️  Lowest Drawdown: {best_by_drawdown['strategy'].upper()}")
         print(f"   Max Drawdown: {best_by_drawdown['max_drawdown']:.2f}%")
         
-        # Show detailed analysis for each strategy
-        print(f"\n{'='*100}")
-        print("📋 DETAILED ANALYSIS FOR EACH STRATEGY")
-        print(f"{'='*100}")
+        # Detailed analysis removed - only showing comparison table above
         
-        for system, metrics, fscore, strategy_name in strategy_systems:
-            print_detailed_analysis(system, metrics, fscore, strategy_name)
-        
-        # Generate plots for all selected strategies automatically
-        print(f"\n{'='*100}")
-        print("📊 GENERATING PLOTS FOR ALL SELECTED STRATEGIES")
-        print(f"{'='*100}")
-        for system, metrics, fscore, strategy_name in strategy_systems:
-            print(f"\n📈 Plotting {strategy_name.upper()}...")
-            try:
-                system.plot_results()
-                print(f"✓ Plot generated for {strategy_name}")
-            except Exception as e:
-                print(f"❌ Error plotting {strategy_name}: {e}")
-                print("  Note: Plots require matplotlib backend. Try: pip install PyQt5")
+        # Generate plots for all selected strategies
+        if parameters['show_plots']:
+            print(f"\n{'='*135}")
+            print("📊 GENERATING PLOTS FOR ALL SELECTED STRATEGIES")
+            print(f"{'='*135}")
+            for system, metrics, fscore, strategy_name in strategy_systems:
+                system.plot_results(show_plots=True)
+        else:
+            # Don't generate plots if not requested
+            pass
 
     elif len(results) == 0:
         print(f"\n❌ Could not analyze any strategies successfully.")
@@ -318,6 +333,7 @@ def main():
         print(f"Period: {parameters['period']}")
         print(f"Interval: {parameters['interval']}")
         print(f"Initial Cash: ${parameters['initial_cash']:,.2f}")
+        print(f"Display Plots: {'Yes' if parameters['show_plots'] else 'No'}")
         
         confirm = input("\nProceed with analysis? (y/n) [default: y]: ").strip().lower() or 'y'
         if confirm not in ['y', 'yes']:
