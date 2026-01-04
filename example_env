@@ -2,7 +2,6 @@
 # Rename this file to '.env' and update with your actual credentials
 
 # Alpaca API Configuration
-# You can use either naming convention (APCA is the official Alpaca convention):
 APCA_API_KEY_ID=your_API_KEY_ID_here
 APCA_SECRET_KEY=your_secret_key_here
 

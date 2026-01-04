@@ -28,9 +28,9 @@ pip install -r requirements.txt
 
 Create a `.env` file:
 ```env
-ALPACA_API_KEY=your_api_key_here
-ALPACA_SECRET_KEY=your_secret_key_here
-ALPACA_BASE_URL=https://paper-api.alpaca.markets/v2
+APCA_API_KEY_ID=your_api_key_here
+APCA_SECRET_KEY=your_secret_key_here
+APCA_BASE_URL=https://paper-api.alpaca.markets/v2
 RISK_FREE_RATE=0.02
 ```
 
